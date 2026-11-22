@@ -28,46 +28,27 @@ jobs:
           unrar x -o+ "HG680P Original.rar" > /dev/null 2>&1
           IMG="HG680P Original/FIRMWARE HG680-P/hg680p-ori.img"
 
-          echo "=== SCAN EXT4 SUPERBLOCK ===" > out/final.txt
+          echo "=== SCAN EXT4 ===" > out/final.txt
           python3 scan.py "$IMG" > out/offsets.txt
           cat out/offsets.txt >> out/final.txt
 
-          echo "=== DEBUGFS DIRECT ===" >> out/final.txt
+          echo "=== DEBUGFS ===" >> out/final.txt
           while read -r OFF VOL; do
             [ -z "$OFF" ] && continue
             echo "--- offset=$OFF vol=$VOL ---" >> out/final.txt
             dd if="$IMG" of="part_$VOL.img" bs=4K \
                iflag=skip_bytes,count_bytes skip="$OFF" count=400M status=none
-            echo "--- ls / ---" >> out/final.txt
+            file "part_$VOL.img" 2>&1 | head -2 >> out/final.txt
             debugfs -R "ls /" "part_$VOL.img" 2>&1 | head -40 >> out/final.txt
-            echo "--- find build.prop path ---" >> out/final.txt
             for BP in /build.prop /system/build.prop; do
-              echo "try $BP" >> out/final.txt
-              debugfs -R "cat $BP" "part_$VOL.img" 2>&1 | head -120 >> out/final.txt
+              echo "--- cat $BP ---" >> out/final.txt
+              debugfs -R "cat $BP" "part_$VOL.img" 2>&1 | head -150 >> out/final.txt
             done
-          done < out/offsets.txt
-
-          echo "=== TRY MOUNT ===" >> out/final.txt
-          while read -r OFF VOL; do
-            [ -z "$OFF" ] && continue
-            echo "--- mount offset=$OFF vol=$VOL ---" >> out/final.txt
-            sudo mkdir -p /mnt/fw
-            sudo mount -o loop,ro,offset="$OFF" "$IMG" /mnt/fw 2>&1 | head -5 >> out/final.txt
-            RC=${PIPESTATUS[0]}
-            echo "rc=$RC" >> out/final.txt
-            if [ "$RC" -eq 0 ]; then
-              find /mnt/fw -name build.prop -type f 2>/dev/null | while read -r BP; do
-                echo "--- $BP ---" >> out/final.txt
-                cat "$BP" 2>&1 | head -150 >> out/final.txt
-              done
-              sudo umount /mnt/fw 2>/dev/null
-              break
-            fi
           done < out/offsets.txt
 
           echo "=== DTB MATCH ===" >> out/final.txt
           strings "HG680P Original/FIRMWARE HG680-P/dtb.img" 2>/dev/null \
-            | grep -iE 'gxl_p212|p212|s905|hg680|j0lh|622|1g|2g' | head -60 >> out/final.txt
+            | grep -iE 'gxl_p212|p212|s905|hg680|j0lh|622' | head -40 >> out/final.txt
 
           cat out/final.txt
 
