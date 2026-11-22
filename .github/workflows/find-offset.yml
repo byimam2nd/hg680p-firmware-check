@@ -21,7 +21,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq unrar e2fsprogs file
 
-      - name: Scan ext4 and dump build.prop via debugfs
+      - name: Dump build.prop via debugfs
         run: |
           set +e
           mkdir -p out
@@ -31,20 +31,22 @@ jobs:
           echo "=== SCAN EXT4 ===" > out/final.txt
           python3 scan.py "$IMG" > out/offsets.txt
           cat out/offsets.txt >> out/final.txt
+          OFF=$(head -1 out/offsets.txt | awk '{print $1}')
+          echo "primary_offset=$OFF" >> out/final.txt
 
-          echo "=== DEBUGFS ===" >> out/final.txt
-          while read -r OFF VOL; do
-            [ -z "$OFF" ] && continue
-            echo "--- offset=$OFF vol=$VOL ---" >> out/final.txt
-            dd if="$IMG" of="part_$VOL.img" bs=4K \
-               iflag=skip_bytes,count_bytes skip="$OFF" count=400M status=none
-            file "part_$VOL.img" 2>&1 | head -2 >> out/final.txt
-            debugfs -R "ls /" "part_$VOL.img" 2>&1 | head -40 >> out/final.txt
-            for BP in /build.prop /system/build.prop; do
-              echo "--- cat $BP ---" >> out/final.txt
-              debugfs -R "cat $BP" "part_$VOL.img" 2>&1 | head -150 >> out/final.txt
-            done
-          done < out/offsets.txt
+          echo "=== FULL SLICE ===" >> out/final.txt
+          dd if="$IMG" of=system.img bs=4K iflag=skip_bytes skip="$OFF" status=none
+          file system.img 2>&1 | head -2 >> out/final.txt
+          ls -lh system.img >> out/final.txt
+
+          echo "=== DEBUGFS ROOT ===" >> out/final.txt
+          debugfs -R "ls /" system.img 2>&1 | head -60 >> out/final.txt
+
+          echo "=== DEBUGFS BUILD.PROP ===" >> out/final.txt
+          for BP in /build.prop /system/build.prop; do
+            echo "--- cat $BP ---" >> out/final.txt
+            debugfs -R "cat $BP" system.img 2>&1 | head -200 >> out/final.txt
+          done
 
           echo "=== DTB MATCH ===" >> out/final.txt
           strings "HG680P Original/FIRMWARE HG680-P/dtb.img" 2>/dev/null \
