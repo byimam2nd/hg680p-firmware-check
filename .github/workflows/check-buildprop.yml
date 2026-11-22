@@ -1,0 +1,72 @@
+name: Extract build.prop HG680P
+on:
+  workflow_dispatch:
+
+jobs:
+  buildprop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Download firmware
+        run: |
+          curl -L --fail --retry 3 --retry-delay 5 \
+            -o "HG680P Original.rar" \
+            "https://drive.usercontent.google.com/download?id=12nZyDKTkeqcTXFNA3O9GEPT1Nk9pO5BV&export=download&authuser=0&confirm=t&uuid=1f84386c-994c-46b6-bf96-9ca67858cbb2"
+          ls -lh "HG680P Original.rar"
+
+      - name: Install tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq unrar e2fsprogs binwalk file
+
+      - name: Extract system partition and read build.prop
+        run: |
+          set +e
+          mkdir -p out
+          unrar x -o+ "HG680P Original.rar" > /dev/null 2>&1
+          IMG="HG680P Original/FIRMWARE HG680-P/hg680p-ori.img"
+
+          echo "=== SLICE SYSTEM ===" > out/buildprop.txt
+          dd if="$IMG" of=system.img bs=4K iflag=skip_bytes,count_bytes \
+             skip=103884264 count=266312704 status=none
+          file system.img >> out/buildprop.txt 2>&1
+          ls -lh system.img >> out/buildprop.txt 2>&1
+
+          echo "=== MOUNT ===" >> out/buildprop.txt
+          sudo mkdir -p /mnt/fw
+          sudo mount -o loop,ro system.img /mnt/fw >> out/buildprop.txt 2>&1
+          echo "mount_rc=$?" >> out/buildprop.txt
+
+          echo "=== ROOT LIST ===" >> out/buildprop.txt
+          ls -la /mnt/fw >> out/buildprop.txt 2>&1
+
+          echo "=== FIND BUILD.PROP ===" >> out/buildprop.txt
+          find /mnt/fw -name build.prop -type f 2>/dev/null >> out/buildprop.txt
+
+          echo "=== BUILD.PROP CONTENT ===" >> out/buildprop.txt
+          for f in /mnt/fw/system/build.prop /mnt/fw/build.prop; do
+            if [ -f "$f" ]; then
+              echo "--- $f ---" >> out/buildprop.txt
+              cat "$f" >> out/buildprop.txt 2>&1
+            fi
+          done
+
+          echo "=== KEY PROPS ===" >> out/buildprop.txt
+          grep -hE 'ro\.product\.(model|name|device|board|brand)|ro\.build\.(fingerprint|display\.id|id|incremental|type|tags|date)|ro\.hardware|ro\.board|persist\.sys' /mnt/fw/system/build.prop /mnt/fw/build.prop 2>/dev/null >> out/buildprop.txt
+
+          echo "=== DTB STRINGS ===" >> out/buildprop.txt
+          strings "HG680P Original/FIRMWARE HG680-P/dtb.img" 2>/dev/null \
+            | grep -iE 'hg680|p212|s905|amlogic|j0lh|622|gxl' | head -40 >> out/buildprop.txt
+
+          echo "=== UBOOT STRINGS ===" >> out/buildprop.txt
+          strings "HG680P Original/FIRMWARE HG680-P/uboot.bin" 2>/dev/null \
+            | grep -iE 'hg680|p212|s905|amlogic|j0lh|622' | head -40 >> out/buildprop.txt
+
+          sudo umount /mnt/fw 2>/dev/null
+          cat out/buildprop.txt
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: buildprop-report
+          path: out/buildprop.txt
