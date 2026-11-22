@@ -7,22 +7,27 @@ size = f.tell()
 found = []
 pos = 0
 chunk = 64 * 1024 * 1024
+carry = b''
 while pos < size:
     f.seek(pos)
-    data = f.read(chunk)
+    data = carry + f.read(chunk)
     start = 0
     while True:
         i = data.find(b'\x53\xef', start)
         if i < 0:
             break
-        abs_off = pos + i
-        if abs_off % 1024 == 0x438 % 1024:
-            sb = abs_off - 0x438
+        abs_off = pos - len(carry) + i
+        sb = abs_off - 0x438
+        if sb >= 0:
             f.seek(sb + 0x480)
             vol = f.read(16).split(b'\x00')[0]
-            if vol in (b'system', b'system_ext', b'data', b'cache'):
+            if vol in (b'system', b'system_ext', b'data', b'cache', b'vendor'):
                 found.append((sb, vol.decode(errors='replace')))
         start = i + 1
+    carry = data[-1:]
     pos += chunk
+seen = set()
 for off, vol in found:
-    print(off, vol)
+    if off not in seen:
+        seen.add(off)
+        print(off, vol)
