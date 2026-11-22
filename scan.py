@@ -21,7 +21,8 @@ while pos < size:
         if sb >= 0:
             f.seek(sb + 0x478)
             vol = f.read(16).split(b'\x00')[0]
-            found.append((sb, vol.decode(errors='replace')))
+            if vol in (b'system', b'system_ext', b'data', b'cache', b'vendor'):
+                found.append((sb, vol.decode(errors='replace')))
         start = i + 1
     carry = data[-1:]
     pos += chunk
